@@ -235,7 +235,6 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
 
     # Register persistent view (won't crash now because custom_id is set)
-    bot.add_view(VerifyView())
 
     # Sync commands to THIS guild only (instant)
     try:
