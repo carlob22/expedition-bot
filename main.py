@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+# ---------- GUILD ----------
 GUILD_ID = 1476921178093387778
 GUILD = discord.Object(id=GUILD_ID)
 
@@ -21,7 +22,6 @@ ROLE_NORTHLAND = "Northland legion"
 ROLE_SOUTHLAND = "Southland legion"
 ROLE_EASTLAND = "Eastland legion"
 
-# Server lists by Legion (from your screenshot)
 LEGIONS = {
     "Westland": {"role": ROLE_WESTLAND, "servers": ["M30", "M70", "M108"]},
     "Northland": {"role": ROLE_NORTHLAND, "servers": ["M31", "M51", "M161"]},
@@ -33,19 +33,18 @@ RANK_TO_ROLE = {"R3": ROLE_R3, "R4": ROLE_R4, "R5": ROLE_R5}
 # ------------------------------------------------------------
 
 INTENTS = discord.Intents.default()
-INTENTS.members = True  # Needed to edit nicknames / roles
+INTENTS.members = True
 
 bot = commands.Bot(command_prefix="!", intents=INTENTS)
 
 
-def get_role(guild: discord.Guild, role_name: str) -> discord.Role | None:
+def get_role(guild: discord.Guild, role_name: str):
     return discord.utils.get(guild.roles, name=role_name)
 
 
 async def assign_roles_and_nick(member: discord.Member, legion: str, server: str, rank: str):
     guild = member.guild
 
-    # Validate
     if legion not in LEGIONS:
         raise ValueError("Invalid legion")
     if rank not in RANK_TO_ROLE:
@@ -53,36 +52,28 @@ async def assign_roles_and_nick(member: discord.Member, legion: str, server: str
     if server not in LEGIONS[legion]["servers"]:
         raise ValueError("Invalid server for legion")
 
-    # Roles to add
     legion_role = get_role(guild, LEGIONS[legion]["role"])
     rank_role = get_role(guild, RANK_TO_ROLE[rank])
     coalition_role = get_role(guild, ROLE_COALITION)
     unverified_role = get_role(guild, ROLE_UNVERIFIED)
 
-    missing = [r for r, name in [(legion_role, LEGIONS[legion]["role"]), (rank_role, RANK_TO_ROLE[rank])] if r is None]
-    if missing:
+    if legion_role is None or rank_role is None:
         raise ValueError("One or more required roles were not found. Check role names in CONFIG.")
 
     roles_to_add = [legion_role, rank_role]
 
-    # Coalition only for R4/R5
     if rank in ("R4", "R5") and coalition_role:
         roles_to_add.append(coalition_role)
 
-    # Remove Unverified (if present)
     if unverified_role and unverified_role in member.roles:
         await member.remove_roles(unverified_role, reason="Verified")
 
-    # Add roles
     await member.add_roles(*roles_to_add, reason="Verified")
 
-    # Set nickname: Username [M130][R5]
-    # (Uses current username; you can change to member.display_name if you prefer)
     new_nick = f"{member.name} [{server}][{rank}]"
     try:
         await member.edit(nick=new_nick, reason="Verified")
     except discord.Forbidden:
-        # If nickname edit fails, roles still work
         pass
 
 
@@ -116,7 +107,6 @@ class LegionSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         view: VerifyView = self.view  # type: ignore
         view.legion = self.values[0]
-        # Reset server selection when legion changes
         view.server = None
         await view.refresh(interaction)
 
@@ -126,7 +116,13 @@ class ServerSelect(discord.ui.Select):
         options = []
         if legion and legion in LEGIONS:
             options = [discord.SelectOption(label=s) for s in LEGIONS[legion]["servers"]]
-        super().__init__(placeholder="Select your server…", options=options, min_values=1, max_values=1, disabled=not bool(options))
+        super().__init__(
+            placeholder="Select your server…",
+            options=options,
+            min_values=1,
+            max_values=1,
+            disabled=not bool(options),
+        )
 
     async def callback(self, interaction: discord.Interaction):
         view: VerifyView = self.view  # type: ignore
@@ -150,12 +146,9 @@ class VerifyView(discord.ui.View):
         self.add_item(self.server_select)
 
     async def refresh(self, interaction: discord.Interaction):
-        # Rebuild server select based on chosen legion
         self.remove_item(self.server_select)
         self.server_select = ServerSelect(self.legion)
         self.add_item(self.server_select)
-
-        ready = bool(self.rank and self.legion and self.server)
 
         content = (
             "**Expedition Verification**\n"
@@ -170,7 +163,6 @@ class VerifyView(discord.ui.View):
         if not (self.rank and self.legion and self.server):
             return await interaction.response.send_message("Please select Rank, Legion, and Server first.", ephemeral=True)
 
-        # Only allow members to verify themselves
         member = interaction.user
         if not isinstance(member, discord.Member):
             member = interaction.guild.get_member(interaction.user.id)  # type: ignore
@@ -181,39 +173,24 @@ class VerifyView(discord.ui.View):
             return await interaction.response.send_message(f"Verification error: {e}", ephemeral=True)
         except discord.Forbidden:
             return await interaction.response.send_message(
-                "I don't have permission to manage roles/nicknames. Check role order & permissions.", ephemeral=True
+                "I don't have permission to manage roles/nicknames. Check bot role order & permissions.",
+                ephemeral=True,
             )
 
         await interaction.response.send_message(
-            f"✅ Verified: **{member.display_name}** → `{self.server}` `{self.rank}` `{self.legion}`", ephemeral=True
+            f"✅ Verified: **{member.display_name}** → `{self.server}` `{self.rank}` `{self.legion}`",
+            ephemeral=True,
         )
 
 
 # -------- Slash command to post the Verify panel --------
-
-GUILD_ID = 1476921178093387778  # replace with your actual server ID
-
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-
-    guild = discord.Object(id=GUILD_ID)
-
-    try:
-        synced = await bot.tree.sync(guild=guild)
-        print(f"Synced {len(synced)} command(s) to guild {GUILD_ID}")
-    except Exception as e:
-        print("Command sync failed:", e)
-
-    print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-
-    print(f"Bot ready as {bot.user}")
-
-@app_commands.guilds(GUILD_ID)
-@bot.tree.command(name="setupverify", description="Post the Expedition verification panel")
+@bot.tree.command(
+    name="setupverify",
+    description="Post the Expedition verification panel",
+    guild=GUILD,   # ✅ THIS is the key
+)
 @app_commands.checks.has_permissions(administrator=True)
 async def setupverify(interaction: discord.Interaction):
-    ...
     view = VerifyView()
     content = (
         "**Expedition Verification**\n"
@@ -223,6 +200,20 @@ async def setupverify(interaction: discord.Interaction):
     )
     await interaction.channel.send(content, view=view)  # type: ignore
     await interaction.response.send_message("✅ Verification panel posted.", ephemeral=True)
+
+
+@bot.event
+async def on_ready():
+    print("✅ LOADED CORRECT main.py v3")
+    bot.add_view(VerifyView())
+
+    try:
+        synced = await bot.tree.sync(guild=GUILD)
+        print(f"✅ Synced {len(synced)} command(s) to guild {GUILD_ID}")
+    except Exception as e:
+        print("❌ Command sync failed:", repr(e))
+
+    print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
 
 
 if not TOKEN:
