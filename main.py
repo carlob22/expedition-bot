@@ -30,16 +30,16 @@ RANK_TO_ROLE = {"R3": ROLE_R3, "R4": ROLE_R4, "R5": ROLE_R5}
 
 # ---- BOT SETUP ----
 intents = discord.Intents.default()
-intents.members = True
+intents.members = True  # requires Privileged Gateway Intents enabled in Dev Portal
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-def get_role(guild, name):
+def get_role(guild: discord.Guild, name: str):
     return discord.utils.get(guild.roles, name=name)
 
 
-async def assign_roles(member, legion, server, rank):
+async def assign_roles(member: discord.Member, legion: str, server: str, rank: str):
     guild = member.guild
 
     legion_role = get_role(guild, LEGIONS[legion]["role"])
@@ -50,74 +50,127 @@ async def assign_roles(member, legion, server, rank):
     if not legion_role or not rank_role:
         raise ValueError("Role names do not match server.")
 
+    # remove unverified if present
     if unverified_role and unverified_role in member.roles:
         await member.remove_roles(unverified_role)
 
-    roles = [legion_role, rank_role]
+    roles_to_add = [legion_role, rank_role]
 
     if rank in ("R4", "R5") and coalition_role:
-        roles.append(coalition_role)
+        roles_to_add.append(coalition_role)
 
-    await member.add_roles(*roles)
+    await member.add_roles(*roles_to_add)
 
+    # nickname format
     await member.edit(nick=f"{member.name} [{server}][{rank}]")
 
 
-# ---------------- VIEW ---------------- #
+# ---------------- UI COMPONENTS ---------------- #
+
+class RankSelect(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=r) for r in ("R3", "R4", "R5")]
+        super().__init__(placeholder="Select Rank", options=options, min_values=1, max_values=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: VerifyView = self.view  # type: ignore
+        view.rank = self.values[0]
+        await interaction.response.defer()
+
+
+class LegionSelect(discord.ui.Select):
+    def __init__(self):
+        options = [discord.SelectOption(label=l) for l in ("Westland", "Northland", "Southland", "Eastland")]
+        super().__init__(placeholder="Select Legion", options=options, min_values=1, max_values=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: VerifyView = self.view  # type: ignore
+        view.legion = self.values[0]
+
+        # Update the server dropdown options immediately
+        server_select = view.server_select
+        server_select.options = [discord.SelectOption(label=s) for s in LEGIONS[view.legion]["servers"]]
+        server_select.placeholder = "Select Server"
+        view.server = None  # reset previously picked server (if any)
+
+        await interaction.response.edit_message(view=view)
+
+
+class ServerSelect(discord.ui.Select):
+    def __init__(self):
+        # start with a dummy option; will be replaced after legion is selected
+        super().__init__(
+            placeholder="Select legion first",
+            options=[discord.SelectOption(label="—")],
+            min_values=1,
+            max_values=1,
+            disabled=True,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        view: VerifyView = self.view  # type: ignore
+
+        if not view.legion:
+            await interaction.response.send_message("Select legion first.", ephemeral=True)
+            return
+
+        view.server = self.values[0]
+        await interaction.response.defer()
+
 
 class VerifyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
-        self.rank = None
-        self.legion = None
-        self.server = None
+        self.rank: str | None = None
+        self.legion: str | None = None
+        self.server: str | None = None
 
-    @discord.ui.select(
-        placeholder="Select Rank",
-        options=[
-            discord.SelectOption(label="R3"),
-            discord.SelectOption(label="R4"),
-            discord.SelectOption(label="R5"),
-        ],
-    )
-    async def select_rank(self, interaction: discord.Interaction, select: discord.ui.Select):
-        self.rank = select.values[0]
-        await interaction.response.defer()
+        self.add_item(RankSelect())
+        self.add_item(LegionSelect())
 
-    @discord.ui.select(
-        placeholder="Select Legion",
-        options=[
-            discord.SelectOption(label="Westland"),
-            discord.SelectOption(label="Northland"),
-            discord.SelectOption(label="Southland"),
-            discord.SelectOption(label="Eastland"),
-        ],
-    )
-    async def select_legion(self, interaction: discord.Interaction, select: discord.ui.Select):
-        self.legion = select.values[0]
-        await interaction.response.defer()
+        self.server_select = ServerSelect()
+        self.add_item(self.server_select)
 
-    @discord.ui.select(placeholder="Select Server")
-    async def select_server(self, interaction: discord.Interaction, select: discord.ui.Select):
-        if not self.legion:
-            await interaction.response.send_message("Select legion first.", ephemeral=True)
-            return
+    async def on_timeout(self):
+        # disable all components when expired (nice UX)
+        for item in self.children:
+            item.disabled = True
+        # Can't edit message here unless you store message reference externally.
 
-        select.options = [
-            discord.SelectOption(label=s)
-            for s in LEGIONS[self.legion]["servers"]
-        ]
-        self.server = select.values[0]
-        await interaction.response.defer()
 
-    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not (self.rank and self.legion and self.server):
+# ---------------- CONFIRM BUTTON ---------------- #
+
+class ConfirmButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Confirm", style=discord.ButtonStyle.success)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: VerifyView = self.view  # type: ignore
+
+        if not (view.rank and view.legion and view.server):
             await interaction.response.send_message("Complete all selections first.", ephemeral=True)
             return
 
-        await assign_roles(interaction.user, self.legion, self.server, self.rank)
+        try:
+            await assign_roles(interaction.user, view.legion, view.server, view.rank)  # user is Member in guild
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ I don't have permission to manage roles or change nicknames.",
+                ephemeral=True,
+            )
+            return
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            return
+
         await interaction.response.send_message("✅ Verified!", ephemeral=True)
+
+
+# Attach button to the view cleanly
+def make_verify_view() -> VerifyView:
+    v = VerifyView()
+    v.add_item(ConfirmButton())
+    return v
 
 
 # ---------------- COMMAND ---------------- #
@@ -125,10 +178,9 @@ class VerifyView(discord.ui.View):
 @bot.tree.command(name="setupverify", description="Post verification panel")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def setupverify(interaction: discord.Interaction):
-
     await interaction.response.defer(ephemeral=True)
 
-    view = VerifyView()
+    view = make_verify_view()
 
     await interaction.channel.send(
         "**Expedition Verification**\nSelect your Rank, Legion and Server.",
@@ -136,7 +188,6 @@ async def setupverify(interaction: discord.Interaction):
     )
 
     await interaction.followup.send("✅ Verification panel posted.", ephemeral=True)
-    
 
 
 @bot.event
