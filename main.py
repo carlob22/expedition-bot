@@ -3,6 +3,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+GUILD_ID = 1476921178093387778
+GUILD = discord.Object(id=GUILD_ID)
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ---- CONFIG (EDIT THESE TO MATCH YOUR SERVER ROLE NAMES) ----
