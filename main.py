@@ -192,17 +192,15 @@ GUILD_ID = 1476921178093387778  # replace with your actual server ID
 
 @bot.event
 async def on_ready():
-    bot.add_view(VerifyView())
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     guild = discord.Object(id=GUILD_ID)
 
     try:
-        # Copies any global commands into this guild instantly, then syncs
-        bot.tree.copy_global_to(guild=guild)
         synced = await bot.tree.sync(guild=guild)
-        print(f"✅ Synced {len(synced)} command(s) to guild {GUILD_ID}.")
+        print(f"Synced {len(synced)} command(s) to guild {GUILD_ID}")
     except Exception as e:
-        print("❌ Command sync failed:", repr(e))
+        print("Command sync failed:", e)
 
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
 
