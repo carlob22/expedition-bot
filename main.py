@@ -251,6 +251,9 @@ async def on_ready():
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.checks.has_permissions(administrator=True)
 async def setupverify(interaction: discord.Interaction):
+
+    await interaction.response.defer(ephemeral=True)  # ← THIS FIXES THE TIMEOUT
+
     view = VerifyView()
     content = (
         "**Expedition Verification**\n"
@@ -259,8 +262,8 @@ async def setupverify(interaction: discord.Interaction):
         "_R4/R5 get Coalition access automatically. R3 stays in legion-only._"
     )
 
-    await interaction.channel.send(content, view=view)  # type: ignore
-    await interaction.response.send_message("✅ Verification panel posted.", ephemeral=True)
+    await interaction.channel.send(content, view=view)
+    await interaction.followup.send("✅ Verification panel posted.", ephemeral=True)
 
 
 # =========================
