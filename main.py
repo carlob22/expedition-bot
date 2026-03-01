@@ -188,16 +188,20 @@ class VerifyView(discord.ui.View):
 
 # -------- Slash command to post the Verify panel --------
 
+GUILD_ID = 1476921178093387778  # replace with your actual server ID
+
 @bot.event
 async def on_ready():
-    # Persistent view for buttons/selects
     bot.add_view(VerifyView())
+
     try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s). Bot ready as {bot.user}.")
+        guild = discord.Object(id=GUILD_ID)
+        synced = await bot.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} command(s) to guild {GUILD_ID}.")
     except Exception as e:
         print("Command sync failed:", e)
 
+    print(f"Bot ready as {bot.user}")
 
 @bot.tree.command(name="setupverify", description="Post the Expedition verification panel in this channel (Admin only).")
 @app_commands.checks.has_permissions(administrator=True)
