@@ -206,9 +206,11 @@ async def on_ready():
 
     print(f"Bot ready as {bot.user}")
 
-@bot.tree.command(name="setupverify", description="Post the Expedition verification panel in this channel (Admin only).")
+@app_commands.guilds(GUILD_ID)
+@bot.tree.command(name="setupverify", description="Post the Expedition verification panel")
 @app_commands.checks.has_permissions(administrator=True)
 async def setupverify(interaction: discord.Interaction):
+    ...
     view = VerifyView()
     content = (
         "**Expedition Verification**\n"
