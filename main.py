@@ -246,12 +246,10 @@ async def on_ready():
     print("✅ Bot ready.")
 
 
-@bot.tree.command(name="setupverify", description="Post the Expedition verification panel")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="setupverify", description="Post the Expedition verification panel")
 @app_commands.checks.has_permissions(administrator=True)
 async def setupverify(interaction: discord.Interaction):
-
-    await interaction.response.defer(ephemeral=True)  # ← THIS FIXES THE TIMEOUT
 
     view = VerifyView()
     content = (
@@ -261,8 +259,11 @@ async def setupverify(interaction: discord.Interaction):
         "_R4/R5 get Coalition access automatically. R3 stays in legion-only._"
     )
 
+    # FIRST respond to interaction
+    await interaction.response.send_message("✅ Verification panel posted.", ephemeral=True)
+
+    # THEN send panel to channel
     await interaction.channel.send(content, view=view)
-    await interaction.followup.send("✅ Verification panel posted.", ephemeral=True)
 
 
 # =========================
