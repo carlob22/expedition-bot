@@ -48,11 +48,23 @@ async def assign_roles(member: discord.Member, legion: str, server: str, rank: s
     unverified_role = get_role(guild, ROLE_UNVERIFIED)
 
     if not legion_role or not rank_role:
-        raise ValueError("Role names do not match server.")
+        raise ValueError("Role names do not match server. Check role spelling/case.")
 
     # remove unverified if present
     if unverified_role and unverified_role in member.roles:
         await member.remove_roles(unverified_role)
+
+    # OPTIONAL: remove old legion + rank roles so re-verifying is clean
+    all_legion_role_names = [cfg["role"] for cfg in LEGIONS.values()]
+    all_rank_role_names = list(RANK_TO_ROLE.values())
+
+    roles_to_remove = []
+    for r in member.roles:
+        if r.name in all_legion_role_names or r.name in all_rank_role_names:
+            roles_to_remove.append(r)
+
+    if roles_to_remove:
+        await member.remove_roles(*roles_to_remove)
 
     roles_to_add = [legion_role, rank_role]
 
@@ -75,7 +87,7 @@ class RankSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         view: VerifyView = self.view  # type: ignore
         view.rank = self.values[0]
-        await interaction.response.defer()
+        await interaction.response.edit_message(view=view)  # ✅ refresh UI
 
 
 class LegionSelect(discord.ui.Select):
@@ -91,15 +103,14 @@ class LegionSelect(discord.ui.Select):
         server_select = view.server_select
         server_select.options = [discord.SelectOption(label=s) for s in LEGIONS[view.legion]["servers"]]
         server_select.placeholder = "Select Server"
-        server_select.disabled = False  # <-- FIX
+        server_select.disabled = False
         view.server = None
 
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=view)  # ✅ refresh UI
 
 
 class ServerSelect(discord.ui.Select):
     def __init__(self):
-        # starts disabled; enabled once a legion is selected
         super().__init__(
             placeholder="Select legion first",
             options=[discord.SelectOption(label="—")],
@@ -116,12 +127,12 @@ class ServerSelect(discord.ui.Select):
             return
 
         view.server = self.values[0]
-        await interaction.response.defer()
+        await interaction.response.edit_message(view=view)  # ✅ refresh UI
 
 
 class VerifyView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=180)
+        super().__init__(timeout=300)
         self.rank: str | None = None
         self.legion: str | None = None
         self.server: str | None = None
@@ -154,7 +165,8 @@ class ConfirmButton(discord.ui.Button):
             await assign_roles(interaction.user, view.legion, view.server, view.rank)
         except discord.Forbidden:
             await interaction.response.send_message(
-                "❌ I don't have permission to manage roles or change nicknames.",
+                "❌ I don't have permission to manage roles or change nicknames.\n"
+                "Fix: give the bot **Manage Roles** + **Change Nickname**, and move the bot role ABOVE the roles it assigns.",
                 ephemeral=True,
             )
             return
