@@ -125,10 +125,18 @@ class VerifyView(discord.ui.View):
 @bot.tree.command(name="setupverify", description="Post verification panel")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def setupverify(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "Verification panel created.",
-        view=VerifyView()
+
+    await interaction.response.defer(ephemeral=True)
+
+    view = VerifyView()
+
+    await interaction.channel.send(
+        "**Expedition Verification**\nSelect your Rank, Legion and Server.",
+        view=view
     )
+
+    await interaction.followup.send("✅ Verification panel posted.", ephemeral=True)
+    
 
 
 @bot.event
