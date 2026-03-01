@@ -30,7 +30,7 @@ RANK_TO_ROLE = {"R3": ROLE_R3, "R4": ROLE_R4, "R5": ROLE_R5}
 
 # ---- BOT SETUP ----
 intents = discord.Intents.default()
-intents.members = True  # requires Privileged Gateway Intents enabled in Dev Portal
+intents.members = True  # enable SERVER MEMBERS INTENT in Dev Portal too
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -87,18 +87,19 @@ class LegionSelect(discord.ui.Select):
         view: VerifyView = self.view  # type: ignore
         view.legion = self.values[0]
 
-        # Update the server dropdown options immediately
+        # ✅ Populate + enable server dropdown when legion is chosen
         server_select = view.server_select
         server_select.options = [discord.SelectOption(label=s) for s in LEGIONS[view.legion]["servers"]]
         server_select.placeholder = "Select Server"
-        view.server = None  # reset previously picked server (if any)
+        server_select.disabled = False  # <-- FIX
+        view.server = None
 
         await interaction.response.edit_message(view=view)
 
 
 class ServerSelect(discord.ui.Select):
     def __init__(self):
-        # start with a dummy option; will be replaced after legion is selected
+        # starts disabled; enabled once a legion is selected
         super().__init__(
             placeholder="Select legion first",
             options=[discord.SelectOption(label="—")],
@@ -132,10 +133,8 @@ class VerifyView(discord.ui.View):
         self.add_item(self.server_select)
 
     async def on_timeout(self):
-        # disable all components when expired (nice UX)
         for item in self.children:
             item.disabled = True
-        # Can't edit message here unless you store message reference externally.
 
 
 # ---------------- CONFIRM BUTTON ---------------- #
@@ -152,7 +151,7 @@ class ConfirmButton(discord.ui.Button):
             return
 
         try:
-            await assign_roles(interaction.user, view.legion, view.server, view.rank)  # user is Member in guild
+            await assign_roles(interaction.user, view.legion, view.server, view.rank)
         except discord.Forbidden:
             await interaction.response.send_message(
                 "❌ I don't have permission to manage roles or change nicknames.",
@@ -166,7 +165,6 @@ class ConfirmButton(discord.ui.Button):
         await interaction.response.send_message("✅ Verified!", ephemeral=True)
 
 
-# Attach button to the view cleanly
 def make_verify_view() -> VerifyView:
     v = VerifyView()
     v.add_item(ConfirmButton())
